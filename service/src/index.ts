@@ -4,6 +4,7 @@ import WebSocket from 'ws';
 import ffmpeg from 'fluent-ffmpeg';
 import ffmpegStaticPath from 'ffmpeg-static';
 import Stream from 'stream';
+import EventEmitter from 'events';
 import type { RequestProps } from './types'
 import type { ChatMessage } from './chatgpt'
 import { chatConfig, chatReplyProcess, currentModel } from './chatgpt'
@@ -11,13 +12,14 @@ import { auth } from './middleware/auth'
 import { limiter } from './middleware/limiter'
 import { isNotEmptyString } from './utils/is'
 import sdk from 'microsoft-cognitiveservices-speech-sdk'
-import { CreateSpeech2TextHandle } from './azure'
+import { CreateSpeech2TextHandle, CreateText2SpeechHandle } from './azure'
 import { Writable } from 'stream';
 
 const wsInstance = expressWs(express());
 const { app } = wsInstance;
 
 const router = express.Router()
+const eventEmitter = new EventEmitter();
 
 app.use(express.static('public'))
 app.use(express.json())
@@ -40,6 +42,8 @@ router.post('/chat-process', [auth, limiter], async (req, res) => {
       lastContext: options,
       process: (chat: ChatMessage) => {
         res.write(firstChunk ? JSON.stringify(chat) : `\n${JSON.stringify(chat)}`)
+        console.dir(`session[${options.conversationId}] send`);
+        eventEmitter.emit(options.conversationId, chat);
         firstChunk = false
       },
       systemMessage,
@@ -149,7 +153,23 @@ app.ws('/azure/stt', (ws: WebSocket, req) => {
 });
 
 // 文字转语音
-app.ws('/azure/tts', (ws: WebSocket) => {
+app.ws('/azure/tts/:uuid', (ws: WebSocket, req:express.Request) => {
+  console.log(`链接建立 uuid: ${req.params.uuid}`);
+
+  //监听AI回复并转换成语音
+  eventEmitter.on(req.params.uuid, (data:ChatMessage) => {
+    console.dir(`session[${req.params.uuid}] get`);
+
+    if(data.detail.choices[0].finish_reason=="stop") {
+      console.dir(JSON.stringify(data))
+      CreateText2SpeechHandle(ws, data.text);
+    }
+  });
+
+  ws.on('close', () => {
+    console.log(`链接销毁 uuid: ${req.originalUrl}`);
+    eventEmitter.removeAllListeners(req.params.uuid);
+  });
 });
 
 // 发音评估

@@ -18,9 +18,9 @@ export function CreateSpeech2TextHandle(ws:WebSocket, language?:string):[sdk.Spe
     else {
         speechConfig.setProperty(sdk.PropertyId.SpeechServiceConnection_LanguageIdMode, 'Continuous');
     }
-
+    
     speechConfig.setProperty(sdk.PropertyId.Speech_SegmentationSilenceTimeoutMs, "100");
-    speechConfig.setProperty(sdk.PropertyId.SpeechServiceConnection_EndSilenceTimeoutMs, "2000");
+    speechConfig.setProperty(sdk.PropertyId.SpeechServiceConnection_EndSilenceTimeoutMs, "800");
     
     // TODO:Add Language
     const autoDetectSourceLanguageConfig = sdk.AutoDetectSourceLanguageConfig.fromLanguages(["en-US", "zh-CN"]);
@@ -62,6 +62,7 @@ export function CreateSpeech2TextHandle(ws:WebSocket, language?:string):[sdk.Spe
             disconnect = 2;
         } else {
             disconnect-=1;
+            ws.send(null);
             if(disconnect<0) {
                 ws.close()
             }
@@ -93,4 +94,53 @@ export function CreateSpeech2TextHandle(ws:WebSocket, language?:string):[sdk.Spe
     });
 
     return [recognizer, pushStream];
+}
+
+/**
+ * 文字转语音
+ */
+export function CreateText2SpeechHandle(ws:WebSocket, text:string):void
+{
+    console.log(`Azure Serve sst:${process.env.AZURE_SPEECH_KEY}:${process.env.AZURE_SPEECH_REGION}`);
+    // Create a speech config from the subscription key and region
+    const speechConfig = sdk.SpeechConfig.fromSubscription(process.env.AZURE_SPEECH_KEY, process.env.AZURE_SPEECH_REGION);
+
+    // Set the output format
+    speechConfig.speechSynthesisOutputFormat = sdk.SpeechSynthesisOutputFormat.Audio24Khz48KBitRateMonoMp3;
+    // speechConfig.speechSynthesisLanguage = "en-GB"
+    // speechConfig.speechSynthesisVoiceName = "en-GB-BellaNeural"; 
+
+    const speechSynthesizer = new sdk.SpeechSynthesizer(speechConfig, null);
+    // speechSynthesizer.wordBoundary = function (sender: sdk.SpeechSynthesizer, event: sdk.SpeechSynthesisWordBoundaryEventArgs) {
+    //     // Word, Punctuation, or Sentence
+    //     var str = `WordBoundary event: \
+    //         \r\n\tBoundaryType: ${event.boundaryType} \
+    //         \r\n\tAudioOffset: ${(event.audioOffset + 5000) / 10000}ms \
+    //         \r\n\tDuration: ${event.duration} \
+    //         \r\n\tText: \"${event.text}\" \
+    //         \r\n\tTextOffset: ${event.textOffset} \
+    //         \r\n\tWordLength: ${event.wordLength}`;
+    //     console.log(str);
+    // };
+
+    speechSynthesizer.synthesizing = function (s, e) {
+        console.log(`Synthesizing event: \
+            \r\n\tAudioData: ${e.result.audioData.byteLength} bytes`);
+        // ws.send(e.result.audioData);
+    };
+
+    speechSynthesizer.speakTextAsync(
+        text,
+        result => {
+            // Interact with the audio ArrayBuffer data
+            const audioData = result.audioData;
+            console.log(`Audio data byte size: ${audioData.byteLength}.`)
+            speechSynthesizer.close();
+            ws.send(audioData);
+            ws.close();
+        },
+        error => {
+            console.log(error);
+            speechSynthesizer.close();
+    });
 }
