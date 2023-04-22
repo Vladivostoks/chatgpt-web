@@ -91,7 +91,7 @@ function buildTTSPlayerWs()
   const mediaSource = new MediaSource();
 
   mediaSource.onsourceopen = function() {
-    const wsSoundStream = new WebSocket('wss://test.azure.aydenshu.com/azure/tts/'+String(chatStore.active));
+    const wsSoundStream = new WebSocket(import.meta.env.VITE_AZURE_API_TTS_URL+String(chatStore.active));
     const sourceBuffer = mediaSource.addSourceBuffer('audio/mpeg');
     let cacheBuffer:ArrayBuffer[] = []
     const concatenateArrayBuffers = async (buffers: ArrayBuffer[]):Promise<ArrayBuffer>=>{
