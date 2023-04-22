@@ -50,6 +50,11 @@ export default {
     preview: '预览',
     showRawText: '显示原文',
   },
+  message: {
+    start_recording: '开始录音',
+    fail_audio: '录音失败，请检查设备是否接入麦克风',
+    end_recording: '结束录音',
+  },
   setting: {
     setting: '设置',
     general: '总览',
