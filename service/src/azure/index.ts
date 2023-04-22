@@ -21,6 +21,7 @@ export function CreateSpeech2TextHandle(ws:WebSocket, language?:string):[sdk.Spe
     
     speechConfig.setProperty(sdk.PropertyId.Speech_SegmentationSilenceTimeoutMs, "100");
     speechConfig.setProperty(sdk.PropertyId.SpeechServiceConnection_EndSilenceTimeoutMs, "800");
+    speechConfig.setProperty(sdk.PropertyId.Conversation_Initial_Silence_Timeout, "800");
     
     // TODO:Add Language
     const autoDetectSourceLanguageConfig = sdk.AutoDetectSourceLanguageConfig.fromLanguages(["en-US", "zh-CN"]);
@@ -122,12 +123,12 @@ export function CreateText2SpeechHandle(ws:WebSocket, text:string):void
     //         \r\n\tWordLength: ${event.wordLength}`;
     //     console.log(str);
     // };
-
-    speechSynthesizer.synthesizing = function (s, e) {
-        console.log(`Synthesizing event: \
-            \r\n\tAudioData: ${e.result.audioData.byteLength} bytes`);
-        // ws.send(e.result.audioData);
-    };
+    
+    // speechSynthesizer.synthesizing = function (s, e) {
+    //     console.log(`Synthesizing event: \
+    //         \r\n\tAudioData: ${e.result.audioData.byteLength} bytes`);
+    //     // ws.send(e.result.audioData);
+    // };
 
     speechSynthesizer.speakTextAsync(
         text,
