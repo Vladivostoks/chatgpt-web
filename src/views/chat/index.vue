@@ -59,8 +59,85 @@ dataSources.value.forEach((item, index) => {
 let ws_addr = import.meta.env.VITE_AZURE_API_BASE_URL;
 let ws_socket:WebSocket;
 let recorder:MediaRecorder;
-const silenceLimit:number = 0.5
+const silenceLimit:number = 0.6
 const autoTalk:boolean = true;
+
+//接收转换语音的ws链路，初始化为当前会话的
+// let wsSoundStream:WebSocket;
+// watch(
+//   () => chatStore.active,
+//   (acive_uuid, temp) => {
+//     console.log(wsSoundStream?.url)
+//     console.log(String(acive_uuid))
+//     if(wsSoundStream?.url.includes(String(acive_uuid)))
+//       return
+
+//     if (wsSoundStream)
+//       wsSoundStream.close()
+//     wsSoundStream = new WebSocket('wss://test.azure.aydenshu.com/azure/tts/'+String(chatStore.active));
+    
+//     wsSoundStream.addEventListener("open", () => {
+//       console.log(`链接建立:${chatStore.active}`)
+//     });
+//     wsSoundStream.addEventListener("close", () => {
+//       console.log(`链接销毁:${chatStore.active}`)
+//     });
+//   },
+//   { immediate: true },
+// )
+
+function buildTTSPlayerWs()
+{
+  const mediaSource = new MediaSource();
+
+  mediaSource.onsourceopen = function() {
+    const wsSoundStream = new WebSocket('wss://test.azure.aydenshu.com/azure/tts/'+String(chatStore.active));
+    const sourceBuffer = mediaSource.addSourceBuffer('audio/mpeg');
+    let cacheBuffer:ArrayBuffer[] = []
+    const concatenateArrayBuffers = async (buffers: ArrayBuffer[]):Promise<ArrayBuffer>=>{
+      const blobs = buffers.map(buffer => new Blob([buffer]));
+
+      const blob = new Blob(blobs);
+      return await blob.arrayBuffer();
+    }
+
+    wsSoundStream.binaryType = "arraybuffer";
+    wsSoundStream.addEventListener("open", () => {
+      console.log(new Date()+`链接建立:${chatStore.active}`)
+    });
+
+    wsSoundStream.addEventListener("close", () => {
+      console.log(new Date()+`链接销毁:${chatStore.active}`)
+      // if(mediaSource.readyState == "open") {
+      //   mediaSource.endOfStream();
+      // }
+    });
+
+    wsSoundStream.onmessage = async function(event:MessageEvent) {
+      console.log(new Date()+"收到数据" + (event.data as ArrayBuffer).byteLength)
+      if(0) {
+        //缓存一部分数据后再播放，否则播放会有问题
+        cacheBuffer.push(event.data)
+        if(cacheBuffer.length>200) {
+          sourceBuffer.appendBuffer(await concatenateArrayBuffers(cacheBuffer)); // 将音频数据添加到 SourceBuffer 中
+          cacheBuffer = [];
+        }
+      }
+      else {
+        sourceBuffer.appendBuffer(event.data); // 将音频数据添加到 SourceBuffer 中
+      }
+    };
+
+    audio.play();
+  };
+
+  mediaSource.onsourceclose = function() {
+    // 自动打开录音
+    startRecording();
+  }
+  const audio:any = document.createElement("audio")
+  audio.src =  URL.createObjectURL(mediaSource);
+}
 
 //开启录音监听
 function startRecording() {
@@ -68,7 +145,7 @@ function startRecording() {
   //先建立连接然后开始录音
   // 创建一个websocket客户端，传入一个websocket服务器的URL
   ws_socket = new WebSocket(ws_addr);
-      
+
   // 监听open事件，表示连接已建立，初始化音频
   ws_socket.addEventListener("open", () => {
     // 获取音频流
@@ -193,7 +270,9 @@ function startRecording() {
 
   // // 监听error事件，表示发生了错误
   ws_socket.addEventListener("error", (error) => {
-    recorder.stop()
+    if(recorder?.state == "recording") {
+      recorder.stop();
+    }
     // 处理错误
     console.error(error);
   });
@@ -204,7 +283,9 @@ let timoutFun:NodeJS.Timeout|null = null;
 
 //停止录音
 function stopRecording(){
-  recorder.stop();
+  if(recorder?.state == "recording") {
+    recorder.stop();
+  }
 
   ms.success(t('message.end_recording'))
 }
@@ -238,6 +319,9 @@ watch(
 )
 
 function handleSubmit() {
+  if(recorderStatus.value){
+    stopRecording()
+  }
   onConversation()
 }
 
@@ -288,6 +372,8 @@ async function onConversation() {
   )
   scrollToBottom()
 
+  options.conversationId = String(chatStore.active);
+
   try {
     let lastText = ''
     const fetchChatAPIOnce = async () => {
@@ -335,7 +421,7 @@ async function onConversation() {
       })
       updateChatSome(+uuid, dataSources.value.length - 1, { loading: false })
     }
-
+    buildTTSPlayerWs();
     await fetchChatAPIOnce()
   }
   catch (error: any) {
@@ -464,6 +550,7 @@ async function onRegenerate(index: number) {
       })
       updateChatSome(+uuid, index, { loading: false })
     }
+    //此处打开websocket接收音频
     await fetchChatAPIOnce()
   }
   catch (error: any) {
