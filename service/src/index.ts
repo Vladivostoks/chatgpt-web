@@ -1,21 +1,31 @@
 import express from 'express'
+import expressWs from 'express-ws';
+import WebSocket from 'ws';
+import ffmpeg from 'fluent-ffmpeg';
+import ffmpegStaticPath from 'ffmpeg-static';
+import Stream from 'stream';
 import type { RequestProps } from './types'
 import type { ChatMessage } from './chatgpt'
 import { chatConfig, chatReplyProcess, currentModel } from './chatgpt'
 import { auth } from './middleware/auth'
 import { limiter } from './middleware/limiter'
 import { isNotEmptyString } from './utils/is'
+import sdk from 'microsoft-cognitiveservices-speech-sdk'
+import { CreateSpeech2TextHandle } from './azure'
+import { Writable } from 'stream';
 
-const app = express()
+const wsInstance = expressWs(express());
+const { app } = wsInstance;
+
 const router = express.Router()
 
 app.use(express.static('public'))
 app.use(express.json())
 
 app.all('*', (_, res, next) => {
-  res.header('Access-Control-Allow-Origin', '*')
-  res.header('Access-Control-Allow-Headers', 'authorization, Content-Type')
-  res.header('Access-Control-Allow-Methods', '*')
+  //res.header('Access-Control-Allow-Origin', '*')
+  //res.header('Access-Control-Allow-Headers', 'authorization, Content-Type')
+  //res.header('Access-Control-Allow-Methods', '*')
   next()
 })
 
@@ -82,8 +92,75 @@ router.post('/verify', async (req, res) => {
   }
 })
 
+// 语音转文字
+app.ws('/azure/stt', (ws: WebSocket, req) => {
+  console.log(`WebSocket Session Build`);
+
+  // const [recognizer,translate_stream] = CreateSpeech2TextHandle(ws, "en-US");
+  const [recognizer,translate_stream] = CreateSpeech2TextHandle(ws, "zh-CN");
+  // const [recognizer,translate_stream] = CreateSpeech2TextHandle(ws);
+
+  // 将音频流从WebM格式转换为PCM格式
+  // Step1: 定义输入流
+  const stream_input = new Stream.Readable({
+    read(size) {
+      // console.log(`read ${size}`);
+    }
+  });
+  stream_input.on('end', () => {
+    console.log('Finished reading');
+  });
+  const command:ffmpeg.FfmpegCommand = ffmpeg().setFfmpegPath(ffmpegStaticPath)
+                                               .input(stream_input)
+                                               .outputOptions(['-f s16le', '-ar 16000', '-ac 1'])
+                                               .audioCodec('pcm_s16le')
+                                               .format('s16le')
+  const stream_out:Stream.Writable = command.pipe()
+
+  command.on('error', (err) => {
+    console.error(err);
+  });
+
+  ws.binaryType = 'arraybuffer';
+  ws.on("open", () => {
+    console.log(`链接建立`);
+    // TODO初始化语音识别参数
+  });
+  
+  ws.on('message', (data:ArrayBuffer) => {
+    // console.log(`input from websocket ${data.byteLength}`);
+    stream_input.push(Buffer.from(data));
+  });
+
+  stream_out.on('data', (data: Buffer) => {
+    // console.log(`output from ffmpeg ${data.byteLength}`);
+    translate_stream.write(data.buffer);
+  });
+
+  //对端关闭的时候，停止识别
+  ws.on('close', () => {
+    console.log('WebSocket 连接已关闭。');
+    command.kill('SIGKILL');
+    stream_input.destroy();
+    stream_out.destroy();
+    translate_stream.close();
+    recognizer.stopContinuousRecognitionAsync();
+  });
+});
+
+// 文字转语音
+app.ws('/azure/tts', (ws: WebSocket) => {
+});
+
+// 发音评估
+router.post('/azure/pronunciation_assessment', async (req, res) => {
+
+});
+
 app.use('', router)
 app.use('/api', router)
+
 app.set('trust proxy', 1)
 
-app.listen(3002, () => globalThis.console.log('Server is running on port 3002'))
+// app.listen(8080, 'localhost', () => globalThis.console.log('Server is running on port localhost:8080'))
+app.listen(8081, 'localhost', () => globalThis.console.log('Server is running on port localhost:8081'))
