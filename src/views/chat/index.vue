@@ -56,11 +56,13 @@ dataSources.value.forEach((item, index) => {
 })
 
 
-let ws_addr = import.meta.env.VITE_AZURE_API_BASE_URL;
+let ws_addr = import.meta.env.VITE_AZURE_API_SST_URL;
 let ws_socket:WebSocket;
 let recorder:MediaRecorder;
 const silenceLimit:number = 0.6
 const autoTalk:boolean = true;
+let allowTalk:boolean = false;
+const mstimeout = 1000*1;
 
 //接收转换语音的ws链路，初始化为当前会话的
 // let wsSoundStream:WebSocket;
@@ -88,11 +90,23 @@ const autoTalk:boolean = true;
 
 function buildTTSPlayerWs()
 {
+  if(!allowTalk)
+    return;
   const mediaSource = new MediaSource();
+  const audio:HTMLAudioElement = document.createElement("audio")
+  let audioFlag = false;
+
+  audio.onwaiting = (event) => {
+    if(audioFlag) {
+      startRecording();
+    } 
+    else {
+      audioFlag = true
+    }
+  };
 
   mediaSource.onsourceopen = function() {
     const wsSoundStream = new WebSocket(import.meta.env.VITE_AZURE_API_TTS_URL+String(chatStore.active));
-    const sourceBuffer = mediaSource.addSourceBuffer('audio/mpeg');
     let cacheBuffer:ArrayBuffer[] = []
     const concatenateArrayBuffers = async (buffers: ArrayBuffer[]):Promise<ArrayBuffer>=>{
       const blobs = buffers.map(buffer => new Blob([buffer]));
@@ -114,7 +128,11 @@ function buildTTSPlayerWs()
     });
 
     wsSoundStream.onmessage = async function(event:MessageEvent) {
+      const sourceBuffer = mediaSource.addSourceBuffer('audio/mpeg');
       console.log(new Date()+"收到数据" + (event.data as ArrayBuffer).byteLength)
+      if((event.data as ArrayBuffer).byteLength<=0) {
+        startRecording();
+      }
       if(0) {
         //缓存一部分数据后再播放，否则播放会有问题
         cacheBuffer.push(event.data)
@@ -127,16 +145,14 @@ function buildTTSPlayerWs()
         sourceBuffer.appendBuffer(event.data); // 将音频数据添加到 SourceBuffer 中
       }
     };
-
     audio.play();
   };
 
-  mediaSource.onsourceclose = function() {
-    // 自动打开录音
-    startRecording();
-  }
-  const audio:any = document.createElement("audio")
   audio.src =  URL.createObjectURL(mediaSource);
+  // mediaSource.onsourceclose = function() {
+  //   // 自动打开录音
+  //   startRecording();
+  // }
 }
 
 //开启录音监听
@@ -157,7 +173,7 @@ function startRecording() {
       //   channelCount: 2, // 声道数
       //   sampleSize: 16 // 位深度
       // }) 
-
+      allowTalk = true;
       //音频分析
       const audioCtx = new AudioContext();
       const source = audioCtx.createMediaStreamSource(stream);
@@ -168,9 +184,7 @@ function startRecording() {
       console.dir(audioCtx.destination);
       analyser.fftSize = 256;
 
-      recorder = new MediaRecorder(stream,{
-        mimeType: "audio/webm",
-      });
+      recorder = new MediaRecorder(stream);
       
       //获取人声音量
       function getAverageVolume() {
@@ -230,8 +244,8 @@ function startRecording() {
       // 在这里使用录音器
       recorder.start(mstimeInterval)
     }).catch((error) => {
-      console.dir(error)
-      ms.error(t('message.fail_audio'))
+      console.dir(error);
+      ms.error(t('message.fail_audio')+error.message);
     });
   });
       
@@ -242,7 +256,6 @@ function startRecording() {
     if(typeof event.data === 'string') {
       prompt.value = prompt.value + event.data;
     } else if(autoTalk){
-      const mstimeout = 1000*2;
       console.dir(new Date()+" Start!")
       //静默超时的时候中断会话
       timoutFun = setTimeout(() => {
@@ -279,7 +292,6 @@ function startRecording() {
 }
 
 let timoutFun:NodeJS.Timeout|null = null;
-
 
 //停止录音
 function stopRecording(){

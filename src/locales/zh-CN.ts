@@ -51,9 +51,9 @@ export default {
     showRawText: '显示原文',
   },
   message: {
-    start_recording: '开始录音',
-    fail_audio: '录音失败，请检查设备是否接入麦克风',
-    end_recording: '结束录音',
+    start_recording: '请讲话',
+    fail_audio: '收音失败，Reason:',
+    end_recording: '收音结束',
   },
   setting: {
     setting: '设置',
