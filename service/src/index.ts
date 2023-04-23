@@ -98,7 +98,7 @@ router.post('/verify', async (req, res) => {
 
 // 语音转文字
 app.ws('/azure/stt', (ws: WebSocket, req) => {
-  console.log(`WebSocket Session Build`);
+  console.log(`sst链接建立`);
 
   // const [recognizer,translate_stream] = CreateSpeech2TextHandle(ws, "en-US");
   const [recognizer,translate_stream] = CreateSpeech2TextHandle(ws, "zh-CN");
@@ -127,7 +127,7 @@ app.ws('/azure/stt', (ws: WebSocket, req) => {
 
   ws.binaryType = 'arraybuffer';
   ws.on("open", () => {
-    console.log(`链接建立`);
+    console.log(`sst链接建立2`);
     // TODO初始化语音识别参数
   });
   
@@ -143,7 +143,7 @@ app.ws('/azure/stt', (ws: WebSocket, req) => {
 
   //对端关闭的时候，停止识别
   ws.on('close', () => {
-    console.log('WebSocket 连接已关闭。');
+    console.log('sst 连接已关闭。');
     command.kill('SIGKILL');
     stream_input.destroy();
     stream_out.destroy();
@@ -154,7 +154,7 @@ app.ws('/azure/stt', (ws: WebSocket, req) => {
 
 // 文字转语音
 app.ws('/azure/tts/:uuid', (ws: WebSocket, req:express.Request) => {
-  console.log(`链接建立 uuid: ${req.params.uuid}`);
+  console.log(`tts链接建立 uuid: ${req.params.uuid}`);
 
   //监听AI回复并转换成语音
   eventEmitter.on(req.params.uuid, (data:ChatMessage) => {
@@ -167,7 +167,7 @@ app.ws('/azure/tts/:uuid', (ws: WebSocket, req:express.Request) => {
   });
 
   ws.on('close', () => {
-    console.log(`链接销毁 uuid: ${req.originalUrl}`);
+    console.log(`tts链接销毁 uuid: ${req.originalUrl}`);
     eventEmitter.removeAllListeners(req.params.uuid);
   });
 });
@@ -182,5 +182,5 @@ app.use('/api', router)
 
 app.set('trust proxy', 1)
 
-// app.listen(8080, 'localhost', () => globalThis.console.log('Server is running on port localhost:8080'))
-app.listen(8081, 'localhost', () => globalThis.console.log('Server is running on port localhost:8081'))
+app.listen(8080, 'localhost', () => globalThis.console.log('Server is running on port localhost:8080'))
+// app.listen(8081, 'localhost', () => globalThis.console.log('Server is running on port localhost:8081'))
