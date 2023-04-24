@@ -64,95 +64,74 @@ const autoTalk:boolean = true;
 let allowTalk:boolean = false;
 const mstimeout = 1000*1;
 
-//接收转换语音的ws链路，初始化为当前会话的
-// let wsSoundStream:WebSocket;
-// watch(
-//   () => chatStore.active,
-//   (acive_uuid, temp) => {
-//     console.log(wsSoundStream?.url)
-//     console.log(String(acive_uuid))
-//     if(wsSoundStream?.url.includes(String(acive_uuid)))
-//       return
-
-//     if (wsSoundStream)
-//       wsSoundStream.close()
-//     wsSoundStream = new WebSocket('wss://test.azure.aydenshu.com/azure/tts/'+String(chatStore.active));
-    
-//     wsSoundStream.addEventListener("open", () => {
-//       console.log(`链接建立:${chatStore.active}`)
-//     });
-//     wsSoundStream.addEventListener("close", () => {
-//       console.log(`链接销毁:${chatStore.active}`)
-//     });
-//   },
-//   { immediate: true },
-// )
-
 function buildTTSPlayerWs()
 {
   if(!allowTalk)
     return;
-  const mediaSource = new MediaSource();
+  const wsSoundStream = new WebSocket(import.meta.env.VITE_AZURE_API_TTS_URL+'/'+String(chatStore.active));
   const audio:HTMLAudioElement = document.createElement("audio")
-  let audioFlag = false;
+  let audioBlobBuff:Array<Blob[]>=[];
+  let recvIndex:number = 0;
+  let playIndex:number = 0;
 
-  audio.onwaiting = (event) => {
-    if(audioFlag) {
-      startRecording();
-    } 
-    else {
-      audioFlag = true
-    }
-  };
-
-  mediaSource.onsourceopen = function() {
-    const wsSoundStream = new WebSocket(import.meta.env.VITE_AZURE_API_TTS_URL+String(chatStore.active));
-    let cacheBuffer:ArrayBuffer[] = []
-    const concatenateArrayBuffers = async (buffers: ArrayBuffer[]):Promise<ArrayBuffer>=>{
-      const blobs = buffers.map(buffer => new Blob([buffer]));
-
-      const blob = new Blob(blobs);
-      return await blob.arrayBuffer();
-    }
-
-    wsSoundStream.binaryType = "arraybuffer";
-    wsSoundStream.addEventListener("open", () => {
-      console.log(new Date()+`链接建立:${chatStore.active}`)
-    });
-
-    wsSoundStream.addEventListener("close", () => {
-      console.log(new Date()+`链接销毁:${chatStore.active}`)
-      // if(mediaSource.readyState == "open") {
-      //   mediaSource.endOfStream();
-      // }
-    });
-
-    wsSoundStream.onmessage = async function(event:MessageEvent) {
-      const sourceBuffer = mediaSource.addSourceBuffer('audio/mpeg');
-      console.log(new Date()+"收到数据" + (event.data as ArrayBuffer).byteLength)
-      if((event.data as ArrayBuffer).byteLength<=0) {
+  //设置自动连播
+  const autoplayFun = () => {
+    console.log(playIndex,recvIndex)
+    if(playIndex>=recvIndex) {
+      audio.src = "";
+      if(wsSoundStream.readyState == WebSocket.CLOSED) {
         startRecording();
       }
-      if(0) {
-        //缓存一部分数据后再播放，否则播放会有问题
-        cacheBuffer.push(event.data)
-        if(cacheBuffer.length>200) {
-          sourceBuffer.appendBuffer(await concatenateArrayBuffers(cacheBuffer)); // 将音频数据添加到 SourceBuffer 中
-          cacheBuffer = [];
-        }
-      }
-      else {
-        sourceBuffer.appendBuffer(event.data); // 将音频数据添加到 SourceBuffer 中
-      }
-    };
-    audio.play();
+      return;
+    }
+    const url = URL.createObjectURL(new Blob(audioBlobBuff[playIndex], { type: 'audio/mpeg' }));
+    audio.muted = false;
+    audio.src = url;
+    playIndex++;
+  };
+  audio.onwaiting = autoplayFun;
+  audio.onended = autoplayFun;
+  audio.muted = true;
+
+  wsSoundStream.onopen = () => {
+    console.log(new Date()+`链接建立:${chatStore.active}`)
+    wsSoundStream.binaryType = "arraybuffer";
   };
 
-  audio.src =  URL.createObjectURL(mediaSource);
-  // mediaSource.onsourceclose = function() {
-  //   // 自动打开录音
-  //   startRecording();
-  // }
+  wsSoundStream.onclose = () => {
+    console.log(new Date()+`链接销毁:${chatStore.active}`)
+    if(audio.paused) {
+      startRecording();
+    }
+  };
+
+  wsSoundStream.onmessage = async function(event:MessageEvent) {
+    console.log(new Date()+"收到数据" + (event.data as ArrayBuffer).byteLength)
+
+    // 创建一个URL来引用这个Blob对象，进行播放
+    // if((event.data as ArrayBuffer).byteLength<=0 && audioBlobBuff.length<=0) {
+    //   startRecording();
+    // }
+
+    if((event.data as ArrayBuffer).byteLength > 0) {
+      if(!audioBlobBuff[recvIndex]) {
+        audioBlobBuff[recvIndex] = []
+      }
+      audioBlobBuff[recvIndex].push(new Blob([event.data], { type: 'audio/mpeg' }))
+    }
+    else {
+      recvIndex++;
+
+    // 0：HAVE_NOTHING，无音频数据可用。
+    // 1：HAVE_METADATA，已经加载了音频的元数据（例如时长和尺寸），但是音频数据还没有加载完成。
+    // 2：HAVE_CURRENT_DATA，当前可以播放，但是音频还需要加载更多数据才能连续播放。
+    // 3：HAVE_FUTURE_DATA，当前可以播放，而且预期将会一直可以播放，因为已经有足够的数据缓存了。
+    // 4：HAVE_ENOUGH_DATA，所有数据都已经加载完成，可以播放整个音频。
+      if(audio.readyState == 0) {
+        audio.play();
+      }
+    }
+  };
 }
 
 //开启录音监听
@@ -160,6 +139,7 @@ function startRecording() {
   let audioChunks:Blob[] = []
   //先建立连接然后开始录音
   // 创建一个websocket客户端，传入一个websocket服务器的URL
+  console.dir(ws_addr);
   ws_socket = new WebSocket(ws_addr);
 
   // 监听open事件，表示连接已建立，初始化音频
