@@ -60,7 +60,8 @@ let ws_addr = import.meta.env.VITE_AZURE_API_SST_URL;
 let ws_socket:WebSocket;
 let recorder:MediaRecorder;
 const silenceLimit:number = 0.6
-const autoTalk:boolean = true;
+const isIOS = /iPhone/.test(navigator.userAgent);
+const autoTalk:boolean = isIOS?false:true;
 let allowTalk:boolean = false;
 const mstimeout = 1000*1;
 
