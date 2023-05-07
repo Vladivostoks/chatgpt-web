@@ -12,7 +12,7 @@ import { auth } from './middleware/auth'
 import { limiter } from './middleware/limiter'
 import { isNotEmptyString } from './utils/is'
 import sdk from 'microsoft-cognitiveservices-speech-sdk'
-import { CreateSpeech2TextHandle, CreateText2SpeechHandle } from './azure'
+import { CreatePronunciationAssessment, CreateSpeech2TextHandle, CreateText2SpeechHandle } from './azure'
 import { Writable } from 'stream';
 
 const wsInstance = expressWs(express());
@@ -42,7 +42,7 @@ router.post('/chat-process', [auth, limiter], async (req, res) => {
       lastContext: options,
       process: (chat: ChatMessage) => {
         res.write(firstChunk ? JSON.stringify(chat) : `\n${JSON.stringify(chat)}`)
-        console.dir(`session[${options.conversationId}] send`);
+        // console.dir(`session[${options.conversationId}] send`);
         eventEmitter.emit(options.conversationId, chat);
         firstChunk = false
       },
@@ -99,10 +99,19 @@ router.post('/verify', async (req, res) => {
 // 语音转文字
 app.ws('/azure/stt', (ws: WebSocket, req) => {
   console.log(`sst链接建立`);
+  let language:string[] = [];
 
-  // const [recognizer,translate_stream] = CreateSpeech2TextHandle(ws, "en-US");
-  const [recognizer,translate_stream] = CreateSpeech2TextHandle(ws, "zh-CN");
-  // const [recognizer,translate_stream] = CreateSpeech2TextHandle(ws);
+  //前端传入识别语言类型
+  console.log("reference lang:"+language);
+  if(typeof req.query?.lang === "string") {
+    language = [req.query?.lang];
+  }
+  else {
+    language = req.query?.lang as Array<string>;
+  }
+  language = language ?? ["en-US"];
+  const [recognizer,translate_stream] = CreateSpeech2TextHandle(ws, language);
+  // const [recognizer,translate_stream] = CreateSpeech2TextHandle(ws, ["en-US", "zh-CN"]);
 
   // 将音频流从WebM格式转换为PCM格式
   // Step1: 定义输入流
@@ -158,7 +167,7 @@ app.ws('/azure/tts/:uuid', (ws: WebSocket, req:express.Request) => {
 
   //监听AI回复并转换成语音
   eventEmitter.on(req.params.uuid, (data:ChatMessage) => {
-    console.dir(`session[${req.params.uuid}] get`);
+    // console.dir(`session[${req.params.uuid}] get`);
 
     if(data.detail.choices[0].finish_reason=="stop") {
       console.dir(JSON.stringify(data))
@@ -173,8 +182,53 @@ app.ws('/azure/tts/:uuid', (ws: WebSocket, req:express.Request) => {
 });
 
 // 发音评估
-router.post('/azure/pronunciation_assessment', async (req, res) => {
+app.ws('/azure/pronunciation_assessment', (ws: WebSocket, req:express.Request) => {
+  console.log(`发音评估链接建立`);
 
+  console.log("reference text:"+req.query?.reftext);
+  console.log("reference lang:"+req.query?.lang);
+
+  //赋值reference_text和language
+  const reference_text:string = req.query?.reftext as string ?? "";
+  let language = req.query?.lang as string ?? "en-US";
+  const [recognizer,translate_stream] = CreatePronunciationAssessment(ws, reference_text, language);
+
+  // 将音频流从WebM格式转换为PCM格式
+  // Step1: 定义输入流
+  const stream_input = new Stream.Readable({ read(size) {} });
+  const command:ffmpeg.FfmpegCommand = ffmpeg().setFfmpegPath(ffmpegStaticPath)
+                                               .input(stream_input)
+                                               .outputOptions(['-f s16le', '-ar 16000', '-ac 1'])
+                                               .audioCodec('pcm_s16le')
+                                               .format('s16le')
+  const stream_out:Stream.Writable = command.pipe()
+
+  stream_out.on('data', (data: Buffer) => {
+    // console.log(`output from ffmpeg ${data.byteLength}`);
+    translate_stream.write(data.buffer);
+  });
+
+  stream_out.on('end', () => {
+    translate_stream.close();
+    recognizer.stopContinuousRecognitionAsync();
+  });
+
+  command.on('error', (err) => {
+    console.error(err);
+  });
+
+  ws.binaryType = 'arraybuffer';
+  ws.on('message', (data:ArrayBuffer) => {
+    stream_input.push(Buffer.from(data));
+  });
+
+  //对端关闭的时候，停止识别
+  ws.on('close', () => {
+    console.log('sst 连接已关闭。');
+    command.kill('SIGKILL');
+    stream_input.destroy();
+    stream_out.destroy();
+  });
 });
 
 app.use('', router)
