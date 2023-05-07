@@ -92,6 +92,10 @@ function buildTTSPlayerWs()
   };
   audio.onwaiting = autoplayFun;
   audio.onended = autoplayFun;
+  audio.oncanplay = ()=>{
+    console.dir(`can play ${playIndex}, ${recvIndex}`)
+    audio.play();
+  }
   audio.muted = true;
 
   wsSoundStream.onopen = () => {
@@ -107,8 +111,7 @@ function buildTTSPlayerWs()
   };
 
   wsSoundStream.onmessage = async function(event:MessageEvent) {
-    console.log(new Date()+"收到数据" + (event.data as ArrayBuffer).byteLength)
-
+    // console.log(new Date()+"收到数据" + (event.data as ArrayBuffer).byteLength)
     // 创建一个URL来引用这个Blob对象，进行播放
     // if((event.data as ArrayBuffer).byteLength<=0 && audioBlobBuff.length<=0) {
     //   startRecording();
@@ -121,6 +124,11 @@ function buildTTSPlayerWs()
       audioBlobBuff[recvIndex].push(new Blob([event.data], { type: 'audio/mpeg' }))
     }
     else {
+      let length = 0;
+      audioBlobBuff[recvIndex].forEach((value:Blob)=>{
+        length += value.length;
+      })
+      console.log(new Date()+"收到数据" + length);
       recvIndex++;
 
     // 0：HAVE_NOTHING，无音频数据可用。
@@ -140,7 +148,6 @@ function startRecording() {
   let audioChunks:Blob[] = []
   //先建立连接然后开始录音
   // 创建一个websocket客户端，传入一个websocket服务器的URL
-  console.dir(ws_addr);
   ws_socket = new WebSocket(ws_addr);
 
   // 监听open事件，表示连接已建立，初始化音频
