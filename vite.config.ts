@@ -49,6 +49,8 @@ export default defineConfig((env) => {
       commonjsOptions: {
         ignoreTryCatch: false,
       },
+      outDir: "/var/www/chatgpt",
+      emptyOutDir: true,
     },
   }
 })

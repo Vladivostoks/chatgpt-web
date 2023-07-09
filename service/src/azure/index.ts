@@ -105,7 +105,9 @@ export function CreatePronunciationAssessment(ws:WebSocket, reference_text:strin
     speechConfig.speechRecognitionLanguage = language;
     
     speechConfig.setProfanity(sdk.ProfanityOption.Raw);
-    
+    speechConfig.setProperty(sdk.PropertyId.Speech_SegmentationSilenceTimeoutMs, "1500");
+    speechConfig.setProperty(sdk.PropertyId.SpeechServiceConnection_EndSilenceTimeoutMs, "1600");
+
     // Create a push stream from the audio file TODO:FIX Formate
     // const pushStream = sdk.AudioInputStream.createPushStream(sdk.AudioStreamFormat.getWaveFormat(44100, 16, 2, sdk.AudioFormatTag.PCM));
     const pushStream = sdk.AudioInputStream.createPushStream(sdk.AudioStreamFormat.getDefaultInputFormat());
@@ -119,7 +121,7 @@ export function CreatePronunciationAssessment(ws:WebSocket, reference_text:strin
     const pronunciationAssessmentConfig = new sdk.PronunciationAssessmentConfig(
         reference_text,
         sdk.PronunciationAssessmentGradingSystem.HundredMark,
-        sdk.PronunciationAssessmentGranularity.Phoneme,
+        sdk.PronunciationAssessmentGranularity.Word,
         true
     );
     pronunciationAssessmentConfig.phonemeAlphabet = "IPA";
@@ -150,7 +152,11 @@ export function CreatePronunciationAssessment(ws:WebSocket, reference_text:strin
         var pronunciationAssessmentResultJson = e.result.properties.getProperty(sdk.PropertyId.SpeechServiceResponse_JsonResult);
 
         console.dir(JSON.stringify(pronunciationAssessmentResultJson));
-        ws.send(pronunciationAssessmentResultJson);
+        if(e.result.text)
+        {
+            ws.send(pronunciationAssessmentResultJson);
+            ws.close();
+        }
     };
 
     recognizer.canceled = (s, e) => {
@@ -160,11 +166,13 @@ export function CreatePronunciationAssessment(ws:WebSocket, reference_text:strin
         } else {
           console.debug(`Canceled: ${e.errorDetails}`);
         }
+        ws.close();
     };
   
     recognizer.sessionStopped = (s, e) => {
         console.log('Session stopped');
         recognizer.stopContinuousRecognitionAsync();
+        ws.close();
     };
 
     //建立连接后就开始持续识别，失败的话主动关闭连接

@@ -185,11 +185,11 @@ app.ws('/azure/tts/:uuid', (ws: WebSocket, req:express.Request) => {
 app.ws('/azure/pronunciation_assessment', (ws: WebSocket, req:express.Request) => {
   console.log(`发音评估链接建立`);
 
-  console.log("reference text:"+req.query?.reftext);
+  console.log("reference text:"+decodeURIComponent(Buffer.from(req.query?.reftext as string,'base64').toString()));
   console.log("reference lang:"+req.query?.lang);
 
   //赋值reference_text和language
-  const reference_text:string = req.query?.reftext as string ?? "";
+  const reference_text:string = decodeURIComponent(Buffer.from(req.query?.reftext as string,'base64').toString());
   let language = req.query?.lang as string ?? "en-US";
   const [recognizer,translate_stream] = CreatePronunciationAssessment(ws, reference_text, language);
 
@@ -224,7 +224,7 @@ app.ws('/azure/pronunciation_assessment', (ws: WebSocket, req:express.Request) =
 
   //对端关闭的时候，停止识别
   ws.on('close', () => {
-    console.log('sst 连接已关闭。');
+    console.log('发音评估链接已关闭。');
     command.kill('SIGKILL');
     stream_input.destroy();
     stream_out.destroy();
