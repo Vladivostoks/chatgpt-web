@@ -60,8 +60,9 @@ let ws_addr = import.meta.env.VITE_AZURE_API_SST_URL;
 let ws_socket:WebSocket;
 let recorder:MediaRecorder;
 const silenceLimit:number = 0.6
-const isIOS = /iPhone/.test(navigator.userAgent);
-const autoTalk:boolean = isIOS?false:true;
+// const isIOS = /iPhone/.test(navigator.userAgent);
+// const autoTalk:boolean = isIOS?false:true;
+const autoTalk:boolean = false;
 let allowTalk:boolean = false;
 const mstimeout = 1000*1;
 
@@ -242,7 +243,16 @@ function startRecording() {
     // 打印出收到的消息
     console.log("Received: " + event.data);
     if(typeof event.data === 'string') {
-      prompt.value = prompt.value + event.data;
+      if(event.data == "{errno:1}")
+      {
+        //语音识别服务繁忙
+        ms.warning(t('message.errno_1'))
+        ws_socket.close();
+      }
+      else
+      {
+        prompt.value = prompt.value + " "+event.data;
+      }
     } else if(autoTalk){
       console.dir(new Date()+" Start!")
       //静默超时的时候中断会话

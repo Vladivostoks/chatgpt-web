@@ -69,7 +69,11 @@ export function CreateSpeech2TextHandle(ws:WebSocket, language:string[]):[sdk.Sp
         if (e.errorCode === sdk.CancellationErrorCode.ErrorAPIKey) {
           console.error('Invalid or incorrect subscription key');
         } else {
-          console.debug(`Canceled: ${e.errorDetails}`);
+          console.debug(`Canceled: ${e.errorDetails} VIA ${e.reason}`);
+          console.log('服务异常 WebSocket 连接已关闭。');
+          ws.send("{errno:1}");
+          ws.close();
+          recognizer.close();
         }
     };
   
