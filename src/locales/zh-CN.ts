@@ -59,6 +59,7 @@ export default {
     setting: '设置',
     general: '总览',
     advanced: '高级',
+    talk: '对话',
     config: '配置',
     avatarLink: '头像链接',
     name: '名称',
@@ -77,6 +78,13 @@ export default {
     httpsProxy: 'HTTPS Proxy',
     balance: 'API余额',
     monthlyUsage: '本月使用量',
+    resetTalkingSetting: '重置对话配置',
+    voiceLanguage: '合成语言',
+    voice: '合成语音',
+    recognizeLanguage: '识别语言',
+    commentAccent: '发音评估',
+    autoSpeak: '连续对话',
+    autoSpeakMstimeout: '触发时间(ms)'
   },
   store: {
     siderButton: '提示词商店',
