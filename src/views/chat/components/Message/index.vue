@@ -15,6 +15,8 @@ interface Props {
   inversion?: boolean
   error?: boolean
   loading?: boolean
+  grade?: any
+  voiceData?:Blob
 }
 
 interface Emit {
@@ -107,6 +109,8 @@ function handleRegenerate() {
           :text="text"
           :loading="loading"
           :as-raw-text="asRawText"
+          :grade="grade"
+          :voice-data="voiceData"
         />
         <div class="flex flex-col">
           <button

@@ -8,6 +8,8 @@ declare namespace Chat {
 		loading?: boolean
 		conversationOptions?: ConversationRequest | null
 		requestOptions: { prompt: string; options?: ConversationRequest | null }
+		pronunciationAssessmentResult?:any
+		recordVoice?:Blob
 	}
 
 	interface History {

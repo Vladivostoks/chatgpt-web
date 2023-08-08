@@ -13,7 +13,7 @@ import { useUsingContext } from './hooks/useUsingContext'
 import HeaderComponent from './components/Header/index.vue'
 import { HoverButton, SvgIcon } from '@/components/common'
 import { useBasicLayout } from '@/hooks/useBasicLayout'
-import { useChatStore, usePromptStore } from '@/store'
+import { useChatStore, usePromptStore, useTalkingStore } from '@/store'
 import { fetchChatAPIProcess } from '@/api'
 import { t } from '@/locales'
 
@@ -45,7 +45,8 @@ const inputRef = ref<Ref | null>(null)
 
 // 添加PromptStore
 const promptStore = usePromptStore()
-
+// 添加对话配置
+const talkingStore = useTalkingStore();
 // 使用storeToRefs，保证store修改后，联想部分能够重新渲染
 const { promptList: promptTemplate } = storeToRefs<any>(promptStore)
 
@@ -55,22 +56,20 @@ dataSources.value.forEach((item, index) => {
     updateChatSome(+uuid, index, { loading: false })
 })
 
-
-let ws_addr = import.meta.env.VITE_AZURE_API_SST_URL;
+const ws_addr = import.meta.env.VITE_AZURE_API_SST_URL;
 let ws_socket:WebSocket;
 let recorder:MediaRecorder;
 const silenceLimit:number = 0.6
-// const isIOS = /iPhone/.test(navigator.userAgent);
-// const autoTalk:boolean = isIOS?false:true;
-const autoTalk:boolean = false;
 let allowTalk:boolean = false;
-const mstimeout = 1000*1;
+let noEdit:boolean = true;
 
 function buildTTSPlayerWs()
 {
   if(!allowTalk)
     return;
-  const wsSoundStream = new WebSocket(import.meta.env.VITE_AZURE_API_TTS_URL+'/'+String(chatStore.active));
+
+  const wsSoundStream = new WebSocket(import.meta.env.VITE_AZURE_API_TTS_URL+'/'+String(chatStore.active)
+  +'?language='+`${talkingStore.voiceLanguage}&voice=`+`${talkingStore.voice}`);
   const audio:HTMLAudioElement = document.createElement("audio")
   let audioBlobBuff:Array<Blob[]>=[];
   let recvIndex:number = 0;
@@ -82,7 +81,9 @@ function buildTTSPlayerWs()
     if(playIndex>=recvIndex) {
       audio.src = "";
       if(wsSoundStream.readyState == WebSocket.CLOSED) {
-        startRecording();
+        if(talkingStore.autoSpeak) {
+          startRecording();
+        }
       }
       return;
     }
@@ -107,7 +108,10 @@ function buildTTSPlayerWs()
   wsSoundStream.onclose = () => {
     console.log(new Date()+`链接销毁:${chatStore.active}`)
     if(audio.paused) {
-      startRecording();
+      console.log(talkingStore.autoSpeak)
+      if(talkingStore.autoSpeak) {
+        startRecording();
+      }
     }
   };
 
@@ -144,13 +148,57 @@ function buildTTSPlayerWs()
   };
 }
 
+//暂存最后一次的录音数据
+let audioChunks:Blob[] = []
+
+//发音分析
+function pronunciationAssessment(referece:string, language:string="en-US"):Promise<any> {
+  return new Promise<any>((resolve, reject) => {
+    const addr = import.meta.env.VITE_AZURE_API_PRONUNCIATION_ASSESSMENT_URL;
+    const ws = new WebSocket(`${addr}?reftext=${btoa(encodeURIComponent(referece))}&lang=${language}`);
+  
+    ws.addEventListener("open", () => {
+      for(const i in audioChunks)
+      {
+        ws.send(audioChunks[i]);
+      }
+      //发送空表示结束
+      ws.send(new Blob());
+    });
+      
+    ws.addEventListener("message", (event) => {
+      // 解析字符串中的 JSON 数据
+      const jsonObject = JSON.parse(event.data);
+
+      if(jsonObject?.errno)
+      {
+        //语音识别服务错误
+        ms.warning(t('message.errno_1')+`${jsonObject?.errno}`)
+        ws.close();
+        reject(false);
+      }
+      else
+      {
+        resolve(jsonObject);
+      }
+    });
+
+    ws.addEventListener("close", () => {
+    });
+
+    ws.addEventListener("error", (error) => {
+      reject(false);
+    });
+  });
+
+}
+
 //开启录音监听
 function startRecording() {
-  let audioChunks:Blob[] = []
   //先建立连接然后开始录音
   // 创建一个websocket客户端，传入一个websocket服务器的URL
-  ws_socket = new WebSocket(ws_addr);
-
+  ws_socket = new WebSocket(ws_addr+`?lang=${talkingStore.recognizeLanguage}`);
+  
   // 监听open事件，表示连接已建立，初始化音频
   ws_socket.addEventListener("open", () => {
     // 获取音频流
@@ -200,6 +248,7 @@ function startRecording() {
         console.log("Please Speek...");
         ms.success(t('message.start_recording'))
         recorderStatus.value = true;
+        audioChunks = []
       }
 
       // 网传处理，声音数据保存
@@ -207,7 +256,12 @@ function startRecording() {
         // console.dir(getAverageVolume())
         recorderVolum.value = getAverageVolume()*100
         audioChunks.push(event.data)
-        ws_socket?.send(event.data)
+        if(ws_socket?.readyState == ws_socket?.OPEN) {
+          ws_socket?.send(event.data)
+        }
+        else {
+          ws_socket?.close();
+        }
       }
 
       // 监听stop事件
@@ -243,16 +297,7 @@ function startRecording() {
     // 打印出收到的消息
     console.log("Received: " + event.data);
     if(typeof event.data === 'string') {
-      if(event.data == "{errno:1}")
-      {
-        //语音识别服务繁忙
-        ms.warning(t('message.errno_1'))
-        ws_socket.close();
-      }
-      else
-      {
-        prompt.value = prompt.value + " "+event.data;
-      }
+      prompt.value = prompt.value + event.data;
     } else if(autoTalk){
       console.dir(new Date()+" Start!")
       //静默超时的时候中断会话
@@ -261,9 +306,16 @@ function startRecording() {
         if(recorder?.state == "recording") {
           recorder.stop();
         }
-        handleSubmit();
+        if(talkingStore.autoSpeak) {
+          handleSubmit();
+        }
+        else {
+          if(recorderStatus.value){
+            stopRecording()
+          }
+        }
         console.dir(new Date() + "Go!")
-      }, mstimeout);
+      }, talkingStore.autoSpeakMstimeout);
     }
   });
 
@@ -273,7 +325,7 @@ function startRecording() {
     if(recorder?.state == "recording") {
       recorder.stop();
     }
-    if(autoTalk && prompt.value.length>0) {
+    if(talkingStore.autoSpeak && prompt.value.length>0) {
       handleSubmit();
     }
     console.log("Connection closed");
@@ -345,18 +397,16 @@ async function onConversation() {
     return
 
   controller = new AbortController()
+  let msg:Chat.Chat = {
+    dateTime: new Date().toLocaleString(),
+    text: message,
+    inversion: true,
+    error: false,
+    conversationOptions: null,
+    requestOptions: { prompt: message, options: null },
+  }
 
-  addChat(
-    +uuid,
-    {
-      dateTime: new Date().toLocaleString(),
-      text: message,
-      inversion: true,
-      error: false,
-      conversationOptions: null,
-      requestOptions: { prompt: message, options: null },
-    },
-  )
+  addChat( +uuid, msg)
   scrollToBottom()
 
   loading.value = true
@@ -383,7 +433,17 @@ async function onConversation() {
   scrollToBottom()
 
   options.conversationId = String(chatStore.active);
-
+  if(talkingStore.commentAccent && audioChunks.length>0)
+  {
+    pronunciationAssessment(message).then(res=>{
+      console.dir(res)
+      msg.pronunciationAssessmentResult = res;
+      msg.recordVoice = new Blob(audioChunks, { type: recorder.mimeType });
+      console.dir("store blob:")
+      console.dir(msg.recordVoice)
+      updateChat( +uuid, dataSources.value.length - 2, msg);
+    });
+  }
   try {
     let lastText = ''
     const fetchChatAPIOnce = async () => {
@@ -776,6 +836,8 @@ onUnmounted(() => {
                 :inversion="item.inversion"
                 :error="item.error"
                 :loading="item.loading"
+                :grade="item.pronunciationAssessmentResult"
+                :voice-data="item.recordVoice"
                 @regenerate="onRegenerate(index)"
                 @delete="handleDelete(index)"
               />
@@ -815,7 +877,7 @@ onUnmounted(() => {
                       :height="2" :border-radius="4"
                       :percentage="recorderVolum" :show-indicator="false" />
             <NAutoComplete v-model:value="prompt" :options="searchOptions" :render-label="renderOption">
-              <template #default="{ handleInput, handleBlur, handleFocus }">
+              <template #default="{ handleInput }">
                   <NInput
                     ref="inputRef"
                     v-model:value="prompt"
@@ -823,8 +885,8 @@ onUnmounted(() => {
                     :placeholder="placeholder"
                     :autosize="{ minRows: 1, maxRows: isMobile ? 4 : 8 }"
                     @input="handleInput"
-                    @focus="handleFocus"
-                    @blur="handleBlur"
+                    @focus="()=>{noEdit = false;}"
+                    @blur="()=>{noEdit = true;}"
                     @keypress="handleEnter"
                   >
                   </NInput>
