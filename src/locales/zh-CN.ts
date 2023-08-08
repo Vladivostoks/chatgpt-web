@@ -54,6 +54,7 @@ export default {
     start_recording: '请讲话',
     fail_audio: '收音失败，Reason:',
     end_recording: '收音结束',
+    errno_1: '语音识别错误:',
   },
   setting: {
     setting: '设置',

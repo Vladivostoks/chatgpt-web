@@ -143,10 +143,11 @@ function handleReset() {
           />
         </div>
       </div>
-      <div v-if="allowAutoTalk" class="flex items-center space-x-4">
+      <div class="flex items-center space-x-4">
         <span class="flex-shrink-0 w-[100px]">{{ $t('setting.autoSpeak') }}</span>
         <div class="flex flex-wrap items-center gap-4">
           <NSwitch :round="false" 
+                   :disabled="!allowAutoTalk"
                    v-model:value="autoSpeak"
                    @update-value="value => {
                      talkingStore.updateSetting({
