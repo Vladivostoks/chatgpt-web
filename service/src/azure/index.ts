@@ -71,7 +71,9 @@ export function CreateSpeech2TextHandle(ws:WebSocket, language:string[]):[sdk.Sp
         } else {
           console.debug(`Canceled: ${e.errorDetails} VIA ${e.reason}`);
           console.log('服务异常 WebSocket 连接已关闭。');
-          ws.send("{errno:1}");
+          const regex = /Detail="(.*?)"/;
+          const match = e.errorDetails.match(regex);
+          ws.send(`{"errno":"${match[1]}"}`);
           ws.close();
           recognizer.close();
         }
@@ -100,7 +102,7 @@ export function CreateSpeech2TextHandle(ws:WebSocket, language:string[]):[sdk.Sp
  */
 export function CreatePronunciationAssessment(ws:WebSocket, reference_text:string, language:string):[sdk.SpeechRecognizer,sdk.PushAudioInputStream]
 {
-    console.log(`Azure Serve sst[${language}]:${process.env.AZURE_SPEECH_KEY}:${process.env.AZURE_SPEECH_REGION}`);
+    console.log(`Azure Serve accent[${language}]:${process.env.AZURE_SPEECH_KEY}:${process.env.AZURE_SPEECH_REGION}`);
 
     // Create a speech config from the subscription key and region
     const speechConfig = sdk.SpeechConfig.fromSubscription(process.env.AZURE_SPEECH_KEY, process.env.AZURE_SPEECH_REGION);
@@ -108,9 +110,11 @@ export function CreatePronunciationAssessment(ws:WebSocket, reference_text:strin
     // Set Language
     speechConfig.speechRecognitionLanguage = language;
     
+    speechConfig.setProperty(sdk.PropertyId.SpeechServiceConnection_LanguageIdMode, 'Continuous');
+    speechConfig.setProperty(sdk.PropertyId.Speech_SegmentationSilenceTimeoutMs, "5000");
+    speechConfig.setProperty(sdk.PropertyId.SpeechServiceConnection_EndSilenceTimeoutMs, "5000");
+    speechConfig.setProperty(sdk.PropertyId.Conversation_Initial_Silence_Timeout, "5000");
     speechConfig.setProfanity(sdk.ProfanityOption.Raw);
-    speechConfig.setProperty(sdk.PropertyId.Speech_SegmentationSilenceTimeoutMs, "1500");
-    speechConfig.setProperty(sdk.PropertyId.SpeechServiceConnection_EndSilenceTimeoutMs, "1600");
 
     // Create a push stream from the audio file TODO:FIX Formate
     // const pushStream = sdk.AudioInputStream.createPushStream(sdk.AudioStreamFormat.getWaveFormat(44100, 16, 2, sdk.AudioFormatTag.PCM));
@@ -168,7 +172,13 @@ export function CreatePronunciationAssessment(ws:WebSocket, reference_text:strin
         if (e.errorCode === sdk.CancellationErrorCode.ErrorAPIKey) {
           console.error('Invalid or incorrect subscription key');
         } else {
-          console.debug(`Canceled: ${e.errorDetails}`);
+          console.debug(`Canceled: ${e.errorDetails} VIA ${e.reason}`);
+          console.log('服务异常 WebSocket 连接已关闭。');
+          const regex = /Detail="(.*?)"/;
+          const match = e.errorDetails.match(regex);
+          ws.send(`{"errno":"${match[1]}"}`);
+          ws.close();
+          recognizer.close();
         }
         ws.close();
     };
@@ -194,7 +204,7 @@ export function CreatePronunciationAssessment(ws:WebSocket, reference_text:strin
 /**
  * 文字转语音
  */
-export function CreateText2SpeechHandle(ws:WebSocket, text:string):void
+export function CreateText2SpeechHandle(ws:WebSocket, text:string, language:string, voice:string):void
 {
     console.log(`Azure Serve sst:${process.env.AZURE_SPEECH_KEY}:${process.env.AZURE_SPEECH_REGION}`);
     // Create a speech config from the subscription key and region
@@ -202,8 +212,12 @@ export function CreateText2SpeechHandle(ws:WebSocket, text:string):void
 
     // Set the output format
     speechConfig.speechSynthesisOutputFormat = sdk.SpeechSynthesisOutputFormat.Audio24Khz48KBitRateMonoMp3;
-    // speechConfig.speechSynthesisLanguage = "en-GB"
-    // speechConfig.speechSynthesisVoiceName = "en-GB-BellaNeural"; 
+    if(language) {
+        speechConfig.speechSynthesisLanguage = language;
+    }
+    if(voice) {
+        speechConfig.speechSynthesisVoiceName = voice;
+    }
 
     const speechSynthesizer = new sdk.SpeechSynthesizer(speechConfig, null);
     // speechSynthesizer.wordBoundary = function (sender: sdk.SpeechSynthesizer, event: sdk.SpeechSynthesisWordBoundaryEventArgs) {

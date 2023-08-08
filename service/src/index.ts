@@ -102,7 +102,6 @@ app.ws('/azure/stt', (ws: WebSocket, req) => {
   let language:string[] = [];
 
   //前端传入识别语言类型
-  console.log("reference lang:"+language);
   if(typeof req.query?.lang === "string") {
     language = [req.query?.lang];
   }
@@ -110,6 +109,7 @@ app.ws('/azure/stt', (ws: WebSocket, req) => {
     language = req.query?.lang as Array<string>;
   }
   language = language ?? ["en-US"];
+  console.log("reference lang:"+language);
   const [recognizer,translate_stream] = CreateSpeech2TextHandle(ws, language);
   // const [recognizer,translate_stream] = CreateSpeech2TextHandle(ws, ["en-US", "zh-CN"]);
 
@@ -168,10 +168,9 @@ app.ws('/azure/tts/:uuid', (ws: WebSocket, req:express.Request) => {
   //监听AI回复并转换成语音
   eventEmitter.on(req.params.uuid, (data:ChatMessage) => {
     // console.dir(`session[${req.params.uuid}] get`);
-
     if(data.detail.choices[0].finish_reason=="stop") {
       console.dir(JSON.stringify(data))
-      CreateText2SpeechHandle(ws, data.text);
+      CreateText2SpeechHandle(ws, data.text, req.query?.language as string, req.query?.voice as string);
     }
   });
 
@@ -219,7 +218,14 @@ app.ws('/azure/pronunciation_assessment', (ws: WebSocket, req:express.Request) =
 
   ws.binaryType = 'arraybuffer';
   ws.on('message', (data:ArrayBuffer) => {
-    stream_input.push(Buffer.from(data));
+    if(data.byteLength > 0) 
+    {
+      stream_input.push(Buffer.from(data));
+    }
+    else
+    {
+      recognizer.stopContinuousRecognitionAsync();
+    }
   });
 
   //对端关闭的时候，停止识别
